@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+import matplotlib.pyplot as plt
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -55,18 +56,17 @@ class DataFrameCache(SceneCache):
         Maps are pre-rasterized and stored as Zarr arrays.
         """
         super().__init__(cache_path, scene, augmentations)
-
         agent_data_path: Path = self.scene_dir / DataFrameCache._agent_data_file(
             scene.dt
         )
-        if not agent_data_path.exists():
+        #if not agent_data_path.exists():
             # Load the original dt agent data and then
             # interpolate it to the desired dt.
-            self._load_agent_data(scene.env_metadata.dt)
-            self.interpolate_data(scene.dt)
-        else:
-            # Load the data with the desired dt.
-            self._load_agent_data(scene.dt)
+        self._load_agent_data(scene.env_metadata.dt)
+        self.interpolate_data(scene.dt)
+        # else:
+        #     # Load the data with the desired dt.
+        #     self._load_agent_data(scene.dt)
 
         # Setting default data transformation parameters.
         self.reset_obs_format()
@@ -342,9 +342,30 @@ class DataFrameCache(SceneCache):
             scene_data_idxs, self.column_dict["heading"]
         ] = unwrapped_heading
 
+        #interpolated_df2 = interpolated_df.copy()
         # Interpolation.
-        interpolated_df.interpolate(method=method, limit_area="inside", inplace=True)
+        #interpolated_df2.interpolate(method=method, limit_area="inside", inplace=True)
+        groups = {key: group.droplevel(0) for key, group in interpolated_df.groupby(level=0, sort=False)}
+        interpolated = {}
+        for key, group in groups.items():
+            try:
+                interpolated[key] = group.interpolate(method="cubic", limit_area="inside")
+            except:
+                #print("Falling back to linear interpolation...")
+                interpolated[key] = group.interpolate(method="linear", limit_area="inside")
+        # for key in interpolated:
+        #     df = interpolated[key]
+        #     for column in df.columns:
+        #         plt.plot(df.index, df[column].values, label=column)
+        #     plt.xlabel('Index')
+        #     plt.ylabel('Value')
+        #     plt.legend()
+        #     plt.savefig(f"{key}.png")
 
+        interpolated_df = pd.concat([interpolated[key] for key in interpolated])
+        interpolated_df.set_index(new_index, inplace=True)
+
+        #print(interpolated_df.compare(interpolated_df2))
         # Wrapping angles back to [-pi, pi).
         interpolated_df.iloc[:, self.column_dict["heading"]] = arr_utils.angle_wrap(
             interpolated_df.iloc[:, self.column_dict["heading"]]
